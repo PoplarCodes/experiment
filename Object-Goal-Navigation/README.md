@@ -111,6 +111,28 @@ For training the SemExp model on the Object Goal Navigation task:
 python main.py
 ```
 
+### Enabling Semantic Environment Atlas
+Semantic Environment Atlas (SEA) can be enabled to maintain a global
+semantic summary of the explored environment. To activate SEA, pass the
+`--use_sea` flag and optionally configure the update interval:
+
+```
+python main.py --use_sea --sea_update_interval 20
+```
+
+During deployment, SEA adapts its place–object beliefs with Bayesian
+updates. Unexpected detections raise the corresponding entry in the
+connection matrix R, while repeatedly visiting a predicted place without
+finding the goal lowers that weight and triggers replanning.
+
+### Semantic Graph Map statistics
+During training across multiple scenes, individual Semantic Graph Maps can be
+aggregated to derive:
+- Place–Place accessibility matrix Γ describing connectivity between place clusters.
+- Place–Object connection matrix R recording co-occurrence of place clusters and object categories.
+Use `aggregate_graph_statistics` from `agents.utils.semantic_graph_map` to compute these matrices.
+
+
 ### Downloading pre-trained models
 ```
 mkdir pretrained_models;

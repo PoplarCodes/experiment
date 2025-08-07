@@ -9,6 +9,7 @@ from torchvision import transforms
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
 from agents.utils.semantic_prediction import SemanticPredMaskRCNN
+from agents.utils import SemanticEnvironmentAtlas, SemanticGraphMap
 from constants import color_palette
 import envs.utils.pose as pu
 import agents.utils.visualization as vu
@@ -20,10 +21,13 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
     """
 
-    def __init__(self, args, rank, config_env, dataset):
+    def __init__(self, args, rank, config_env, dataset, atlas: SemanticEnvironmentAtlas = None):
 
         self.args = args
         super().__init__(args, rank, config_env, dataset)
+        self.atlas = atlas
+        self.sgm = SemanticGraphMap()
+        self.R = np.zeros((0, args.num_sem_categories), dtype=np.float32)
 
         # initialize transform for RGB observations
         self.res = transforms.Compose(
@@ -62,6 +66,8 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         obs, info = super().reset()
         obs = self._preprocess_obs(obs)
 
+        self.obs = obs
+        self.info = info
         self.obs_shape = obs.shape
 
         # Episode initializations
@@ -111,6 +117,75 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # Reset reward if new long-term goal
         if planner_inputs["new_goal"]:
             self.info["g_reward"] = 0
+        if self.sgm is not None:
+            self.sgm.update(
+                self.obs, planner_inputs.get('map_pred'),
+                planner_inputs.get('pose_pred')
+            )
+
+            gamma = self.sgm.place_place_accessibility()
+            R_obs = self.sgm.place_object_matrix(self.args.num_sem_categories)
+            goal_cat = self.info.get('goal_category')
+
+            if self.R.shape[0] < R_obs.shape[0]:
+                new_R = np.zeros((R_obs.shape[0], self.R.shape[1]), dtype=self.R.dtype)
+                new_R[: self.R.shape[0], :] = self.R
+                self.R = new_R
+
+            if self.R.size:
+                max_val = self.R.max()
+                if max_val <= 0:
+                    max_val = 1.0
+                delta = 0.1 * max_val
+                inc_mask = (R_obs > 0) & (self.R <= 0)
+                self.R[inc_mask] += delta
+
+                if (
+                    goal_cat is not None
+                    and 0 <= goal_cat < self.R.shape[1]
+                ):
+                    curr_place = len(self.sgm.place_nodes) - 1
+                    if (
+                        curr_place < R_obs.shape[0]
+                        and self.R[curr_place, goal_cat] > 0
+                        and R_obs[curr_place, goal_cat] == 0
+                    ):
+                        self.R[curr_place, goal_cat] = max(
+                            0.0, self.R[curr_place, goal_cat] - delta
+                        )
+
+            if (
+                gamma.size
+                and self.R.size
+                and goal_cat is not None
+                and 0 <= goal_cat < self.R.shape[1]
+            ):
+                goal_place = int(np.argmax(self.R[:, goal_cat]))
+                curr_place = len(self.sgm.place_nodes) - 1
+                path = self.sgm.semantic_shortest_path(
+                    gamma, curr_place, goal_place
+                )
+                if path:
+                    tgt_idx = path[1] if len(path) > 1 else path[0]
+                    pose = self.sgm.place_nodes[tgt_idx]['pose']
+                    sea_goal = np.zeros_like(planner_inputs.get('map_pred'))
+                    r = int(pose[1] * 100.0 / self.args.map_resolution)
+                    c = int(pose[0] * 100.0 / self.args.map_resolution)
+                    r = np.clip(r, 0, sea_goal.shape[0] - 1)
+                    c = np.clip(c, 0, sea_goal.shape[1] - 1)
+                    sea_goal[r, c] = 1
+                    planner_inputs['sea_goal'] = sea_goal
+
+        if self.atlas is not None:
+            atlas_goal = self.atlas.query(
+                self.info.get('goal_category')
+            )
+            if planner_inputs.get('sea_goal') is not None:
+                planner_inputs['sea_goal'] = np.maximum(
+                    planner_inputs['sea_goal'], atlas_goal
+                )
+            else:
+                planner_inputs['sea_goal'] = atlas_goal
 
         action = self._plan(planner_inputs)
 
@@ -160,6 +235,9 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
         # Get Map prediction
         map_pred = np.rint(planner_inputs['map_pred'])
         goal = planner_inputs['goal']
+        sea_goal = planner_inputs.get('sea_goal')
+        if sea_goal is not None:
+            goal = np.maximum(goal, sea_goal)
 
         # Get pose prediction and global policy planning window
         start_x, start_y, start_o, gx1, gx2, gy1, gy2 = \
