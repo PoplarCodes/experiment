@@ -6,6 +6,26 @@ For training the SemExp model on the Object Goal Navigation task:
 python main.py
 ```
 
+### Semantic Environment Atlas
+To maintain a global semantic summary during navigation, enable the
+Semantic Environment Atlas (SEA) with:
+
+```
+python main.py --use_sea --sea_update_interval 20
+```
+
+At inference time SEA performs Bayesian updates on its place–object
+matrix. Newly observed connections raise their corresponding weights in
+R, while failing to detect an expected object lowers that weight,
+prompting the agent to replan.
+
+### Semantic Graph Map statistics
+After building SGMs for each training environment, aggregate them with
+`aggregate_graph_statistics` to obtain:
+- Place–Place accessibility matrix Γ measuring connectivity between place clusters.
+- Place–Object connection matrix R summarizing object occurrences per place cluster.
+
+
 ### Specifying number of threads
 The code runs multiple parallel threads for training. Each thread loads a scene on a GPU. The code automatically decides the total number of threads and number of threads on each GPU based on the available GPUs.
 

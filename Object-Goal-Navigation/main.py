@@ -262,7 +262,7 @@ def main():
         [infos[env_idx]['sensor_pose'] for env_idx in range(num_scenes)])
     ).float().to(device)
 
-    _, local_map, _, local_pose = \
+    _, local_map, _, local_pose, _ = \
         sem_map_module(obs, poses, local_map, local_pose)
 
     # Compute Global policy input
@@ -379,7 +379,7 @@ def main():
              in range(num_scenes)])
         ).float().to(device)
 
-        _, local_map, _, local_pose = \
+        _, local_map, _, local_pose, _ = \
             sem_map_module(obs, poses, local_map, local_pose)
 
         locs = local_pose.cpu().numpy()

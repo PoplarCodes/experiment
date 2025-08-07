@@ -148,6 +148,8 @@ def get_args():
     parser.add_argument('--map_pred_threshold', type=float, default=1.0)
     parser.add_argument('--exp_pred_threshold', type=float, default=1.0)
     parser.add_argument('--collision_threshold', type=float, default=0.20)
+    parser.add_argument('--use_sea', action='store_true', default=False)
+    parser.add_argument('--sea_update_interval', type=int, default=10)
 
     # parse arguments
     args = parser.parse_args()
